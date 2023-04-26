@@ -144,11 +144,13 @@ function scalingchanged() {
     }
 }
 
+// Stop animation when slider manually adjusted
 function slidermove() {
     if (running)
         running = false;
 }
 
+// Start/stop animation when canvas clicked, or else propagate click
 function mouseClicked() {
     if (mouseX >= 0 && mouseY >= 0 && mouseX < canvassize && mouseY < canvassize) {
         running = !running;
@@ -192,7 +194,7 @@ function setup() {
     textAlign(CENTER, CENTER); // vertical align CENTER doesn't seem to be working; it's same as BASELINE
     timeindex = createSlider(0, maxindex);
     timeindex.style('width', `${canvassize}px`);
-    timeindex.mousePressed(slidermove);
+    timeindex.mousePressed(slidermove); // stop animation if adjusted
     chkGrid = createCheckbox('grid', true);
     chkAxes = createCheckbox('axes', false);
     chkAxes.changed(axeschanged);
