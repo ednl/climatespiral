@@ -32,7 +32,8 @@ let func = rlin;         // axis scaling = linear (rlin), quadratic (rsqr), loga
 let data, labels;        // labels = month names from CSV header row
 let index = 0, maxindex; // animation progression, number of data points on file
 let dir;                 // direction vectors corresponding to labels (=month names)
-let chkGrid, chkAxes, chkTicks, scaling; // checkboxes and radiobutton collection
+let chkGrid, chkAxes, chkTicks, scaling, timeindex; // checkboxes, radiobuttons, slider
+let running = true;
 
 // Linear translation from degrees celsius to circle radius
 function rlin(celsius) {
@@ -124,22 +125,34 @@ function refcircle(celsius) {
 
 // Only show ticks if axes also shown
 function axeschanged() {
-    if (!chkAxes.checked() && chkTicks.checked())
+    if (!this.checked() && chkTicks.checked())
         chkTicks.checked(false);
 }
 
 // If ticks shown then also show axes
 function tickschanged() {
-    if (chkTicks.checked() && !chkAxes.checked())
+    if (this.checked() && !chkAxes.checked())
         chkAxes.checked(true);
 }
 
 // Axis scaling = lin/sqrt/log
 function scalingchanged() {
-    switch (scaling.value()) {
+    switch (this.value()) {
         case '1': func = rlin; break;
         case '2': func = rsqr; break;
         case '3': func = rlog; break;
+    }
+}
+
+function slidermove() {
+    if (running)
+        running = false;
+}
+
+function mouseClicked() {
+    if (mouseX >= 0 && mouseY >= 0 && mouseX < canvassize && mouseY < canvassize) {
+        running = !running;
+        return false;
     }
 }
 
@@ -177,10 +190,13 @@ function setup() {
     warm    = color(255,   0,   0); // red   for temperature anomaly > 0
     rectMode(CENTER);
     textAlign(CENTER, CENTER); // vertical align CENTER doesn't seem to be working; it's same as BASELINE
+    timeindex = createSlider(0, maxindex);
+    timeindex.style('width', `${canvassize}px`);
+    timeindex.mousePressed(slidermove);
     chkGrid = createCheckbox('grid', true);
     chkAxes = createCheckbox('axes', false);
-    chkTicks = createCheckbox('ticks', false);
     chkAxes.changed(axeschanged);
+    chkTicks = createCheckbox('ticks', false);
     chkTicks.changed(tickschanged);
     scaling = createRadio();
     scaling.option('1', 'linear');
@@ -196,11 +212,17 @@ function draw() {
     translate(origin, origin);
     scale(scalefactor);
 
+    // Show progress or jump to time index
+    if (running)
+        timeindex.value(index);
+    else
+        index = timeindex.value();
+
     // Grid and axes
     if (chkGrid.checked())
         showgrid(0.5);
     if (chkAxes.checked())
-        showaxes(chkTicks.checked() ? 0.25 : 0);
+        showaxes(chkTicks.checked() ? 0.125 : 0);
 
     // Reference circles
     for (let i = 0; i < refs.length; ++i)
@@ -248,6 +270,10 @@ function draw() {
     }
 
     // Next animation step
-    if (index < maxindex)
-        ++index;
+    if (running) {
+        if (index < maxindex)
+            ++index;
+        else
+            running = false;
+    }
 }
