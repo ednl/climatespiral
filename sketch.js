@@ -2,7 +2,7 @@
 const anomin  = -1.0;        // anomaly value at the origin (must be < 0)
 const anomax  =  1.5;        // anomaly value at the edge (must be > 0)
 const refs    = [0, 1, 1.5]; // reference circles
-const invalid = '***';
+const invalid = '***';       // placeholder for unavailable data in the CSV file
 
 // Visualisation parameters
 const canvassize  = 800;  // square canvas width and height in pixels
@@ -28,12 +28,12 @@ const label_r = -range * (1 + margin / 2) + 2 * pixelsize; // label radius = mon
 const rangelog = (Math.exp(range) - 1) / range;    // range scaling for logarithmic graph
 
 // Variables
-let func = rlin;         // axis scaling = linear (rlin), quadratic (rsqr), logarithmic (rlog)
+let mapping = rlin;      // axis scaling = linear (rlin), quadratic (rsqr), logarithmic (rlog)
 let data, labels;        // labels = month names from CSV header row
 let index = 0, maxindex; // animation progression, number of data points on file
 let dir;                 // direction vectors corresponding to labels (=month names)
 let chkGrid, chkAxes, chkTicks, scaling, timeindex; // checkboxes, radiobuttons, slider
-let running = true;
+let running = true;      // draw loop always runs to enable interaction, this controls the animation
 
 // Linear translation from degrees celsius to circle radius
 function rlin(celsius) {
@@ -53,7 +53,7 @@ function rlog(celsius) {
     return dist > 0 ? Math.log(1 + dist * rangelog) : 0; // log map [min..max] => [0..range]
 }
 
-// Show grid, gridstep must be > 0
+// Show grid (gridstep must be > 0)
 function showgrid(gridstep) {
     stroke(gridcolour);
     strokeWeight(0.5 * pixelsize);
@@ -64,8 +64,8 @@ function showgrid(gridstep) {
     // Other gridlines
     const count = Math.round(range / gridstep); // how many steps from min to max
     for (let i = 1; i <= count; ++i) {
-        const c = anomin + i * gridstep;    // temperature anomaly in celsius
-        const r = func(c);                      // circle radius
+        const c = anomin + i * gridstep;        // temperature anomaly in celsius
+        const r = mapping(c);                   // circle radius
         line(r, -borderdist, r, borderdist);
         line(-r, -borderdist, -r, borderdist);
         line(-borderdist, r, borderdist, r);
@@ -84,9 +84,9 @@ function showaxes(tickstep) {
     // Ticks
     if (tickstep > 0) {
         const count = Math.round(range / tickstep); // how many steps from min to max
-        for (let i = 1; i <= count + 1; ++i) {      // one more outside the last gridline
-            const c = anomin + i * tickstep;    // temperature anomaly in celsius
-            const r = func(c);                      // circle radius
+        for (let i = 1; i <= count + 3; ++i) {      // 3 more outside the last gridline
+            const c = anomin + i * tickstep;        // temperature anomaly in celsius
+            const r = mapping(c);                   // circle radius
             line(r, -ticksize, r, ticksize);
             line(-r, -ticksize, -r, ticksize);
             line(-ticksize, r, ticksize, r);
@@ -105,7 +105,7 @@ function gradient(celsius) {
 // Reference circle for the climate spiral
 function refcircle(celsius) {
     const c = gradient(celsius); // colour
-    const r = func(celsius);     // circle radius
+    const r = mapping(celsius);  // circle radius
     textSize(textheight1);       // set before call to textWidth()
     const labeltext = nf(celsius, 1, 1) + '°C';
     const labelsize = textWidth(labeltext);
@@ -123,13 +123,13 @@ function refcircle(celsius) {
     text(labeltext, 0, labelpos + 7 * pixelsize); // +7px correction for textAlign(..,CENTER) not working!
 }
 
-// Only show ticks if axes also shown
+// If axes not shown then also disable ticks
 function axeschanged() {
     if (!this.checked() && chkTicks.checked())
         chkTicks.checked(false);
 }
 
-// If ticks shown then also show axes
+// If ticks enabled then also show axes
 function tickschanged() {
     if (this.checked() && !chkAxes.checked())
         chkAxes.checked(true);
@@ -138,9 +138,9 @@ function tickschanged() {
 // Axis scaling = lin/sqrt/log
 function scalingchanged() {
     switch (this.value()) {
-        case '1': func = rlin; break;
-        case '2': func = rsqr; break;
-        case '3': func = rlog; break;
+        case '1': mapping = rlin; break;
+        case '2': mapping = rsqr; break;
+        case '3': mapping = rlog; break;
     }
 }
 
@@ -249,13 +249,13 @@ function draw() {
     strokeWeight(2 * pixelsize);
     noFill();
     let t0 = data.getNum(0, labels[0]); // first temperature anomaly in the set (Jan 1880)
-    const r0 = func(t0); // circle radius
+    const r0 = mapping(t0); // circle radius
     let x0 = r0 * dir[0].x;
     let y0 = r0 * dir[0].y;
     let yr = 0, mn = 1; // year/month in the loop (month starts at 1)
     for (let i = 1; i <= index; ++i) {         // fast & simple loop up to & including index = maxindex
         const t = data.getNum(yr, labels[mn]); // these are all valid as checked in setup()
-        const r = func(t);
+        const r = mapping(t);
         const x = r * dir[mn].x;
         const y = r * dir[mn].y;
         stroke(gradient((t0 + t) / 2));
