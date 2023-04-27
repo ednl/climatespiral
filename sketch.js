@@ -5,27 +5,35 @@ const refs    = [0, 1, 1.5]; // reference circles
 const invalid = '***';       // placeholder for unavailable data in the CSV file
 
 // Visualisation parameters
-const canvassize  = 800;  // square canvas width and height in pixels
-const bgcolour    = 0;    // black
-const gridcolour  = 102;  // grey
-const axescolour  = 153;  // light grey
-const labelcolour = 255;  // white
-const ticksize    = 0.03; // size of ticks on axes in scaled coordinates
-const margin      = 0.12; // 12% margin around the graph, month labels go here
-let cool, neutral, warm;  // temperature anomaly colours defined in setup()
+const textalignbug = false; // when I built this on MacOS with latest Firefox and p5js 1.6.0, textAlign([...],CENTER) didn't work properly
+const canvassize   = 800;   // square canvas width and height in pixels
+const bgcolour     = 0;     // black
+const gridcolour   = 102;   // grey
+const axescolour   = 153;   // light grey
+const labelcolour  = 255;   // white
+const margin   = 0.12;      // 12% margin around the graph, month labels go here
+const gridstep = 0.5;       // gridline every 0.5 degree celsius
+const ticksize = 0.03;      // size of ticks on axes in scaled coordinates
+let cool, neutral, warm;    // temperature anomaly colours defined in setup()
 
 // Derived constants for internal use
-const range       = anomax - anomin;               // axes go from -range to +range in scaled coordinates
-const origin      = canvassize / 2;                // origin centered on the canvas
-const scalefactor = origin / (1 + margin) / range; // for graph grid [-range..+range] with 12% margin
-const pixelsize   = 1 / scalefactor;               // size of 1 pixel in scaled coordinates
-const borderdist  = origin * pixelsize;            // distance from origin to canvas border in scaled coordinates
-const textheight1 = 20 * borderdist / 400;         // 20px in scaled coordinates (for canvassize=800)
-const textheight2 = 50 * borderdist / 400;         // 50px in scaled coordinates (for canvassize=800)
-const label_n = 12;                                // number of labels = 12 months in a year
-const label_a = 2 * Math.PI / label_n;             // label angle = month labels 30 degrees apart
-const label_r = -range * (1 + margin / 2) + 2 * pixelsize; // label radius = month labels in middle of margin, start at centre-top, 2px correction for textAlign(..,CENTER) not working!
-const rangelog = (Math.exp(range) - 1) / range;    // range scaling for logarithmic graph
+const range       = anomax - anomin;                // axes go from -range to +range in scaled coordinates
+const origin      = canvassize / 2;                 // origin centered on the canvas
+const scalefactor = origin / (1 + margin) / range;  // for graph grid [-range..+range] with 12% margin
+const pixelsize   = 1 / scalefactor;                // size of 1 pixel in scaled coordinates
+const borderdist  = origin * pixelsize;             // distance from origin to canvas border in scaled coordinates
+const textheight1 = 20 * borderdist / 400;          // 20px in scaled coordinates (for canvassize=800)
+const textheight2 = 50 * borderdist / 400;          // 50px in scaled coordinates (for canvassize=800)
+const bug2px  = textalignbug ?  2 * pixelsize : 0;  //  2px correction for textAlign([...],CENTER) bug on MacOS/Firefox
+const bug7px  = textalignbug ?  7 * pixelsize : 0;  //  7px correction for textAlign([...],CENTER) bug on MacOS/Firefox
+const bug16px = textalignbug ? 16 * pixelsize : 0;  // 16px correction for textAlign([...],CENTER) bug on MacOS/Firefox
+const label_n = 12;                                 // number of labels = 12 months in a year
+const label_a = 2 * Math.PI / label_n;              // label angle = month labels 30 degrees apart
+const label_r = -range * (1 + margin / 2) + bug2px; // label radius = month labels in middle of margin, start at centre-top
+const rangelog = (Math.exp(range) - 1) / range;     // range scaling for logarithmic graph
+const gridcount = Math.round(range / gridstep);     // how many gridlines from anomin to anomax
+const tickstep = gridstep / 4;                      // 3 ticks between gridlines
+const tickcount = Math.round(range / tickstep) + 3; // how many ticks from anomin to anomax, +3 outside last gridline
 
 // Variables
 let mapping = rlin;      // axis scaling = linear (rlin), quadratic (rsqr), logarithmic (rlog)
@@ -53,8 +61,8 @@ function rlog(celsius) {
     return dist > 0 ? Math.log(1 + dist * rangelog) : 0; // log map [min..max] => [0..range]
 }
 
-// Show grid (gridstep must be > 0)
-function showgrid(gridstep) {
+// Show grid
+function showgrid() {
     stroke(gridcolour);
     strokeWeight(0.5 * pixelsize);
     noFill();
@@ -62,10 +70,9 @@ function showgrid(gridstep) {
     line(0, -borderdist, 0, borderdist);
     line(-borderdist, 0, borderdist, 0);
     // Other gridlines
-    const count = Math.round(range / gridstep); // how many steps from min to max
-    for (let i = 1; i <= count; ++i) {
-        const c = anomin + i * gridstep;        // temperature anomaly in celsius
-        const r = mapping(c);                   // circle radius
+    for (let i = 1; i <= gridcount; ++i) {
+        const c = anomin + i * gridstep; // temperature anomaly in celsius
+        const r = mapping(c);            // circle radius
         line(r, -borderdist, r, borderdist);
         line(-r, -borderdist, -r, borderdist);
         line(-borderdist, r, borderdist, r);
@@ -73,8 +80,8 @@ function showgrid(gridstep) {
     }
 }
 
-// Show axes, and ticks if tickstep > 0
-function showaxes(tickstep) {
+// Show axes and ticks
+function showaxes(showticks) {
     stroke(axescolour);
     strokeWeight(1 * pixelsize);
     noFill();
@@ -82,11 +89,10 @@ function showaxes(tickstep) {
     line(0, -borderdist, 0, borderdist);
     line(-borderdist, 0, borderdist, 0);
     // Ticks
-    if (tickstep > 0) {
-        const count = Math.round(range / tickstep); // how many steps from min to max
-        for (let i = 1; i <= count + 3; ++i) {      // 3 more outside the last gridline
-            const c = anomin + i * tickstep;        // temperature anomaly in celsius
-            const r = mapping(c);                   // circle radius
+    if (showticks) {
+        for (let i = 1; i <= tickcount; ++i) {
+            const c = anomin + i * tickstep; // temperature anomaly in celsius
+            const r = mapping(c);            // circle radius
             line(r, -ticksize, r, ticksize);
             line(-r, -ticksize, -r, ticksize);
             line(-ticksize, r, ticksize, r);
@@ -120,7 +126,7 @@ function refcircle(celsius) {
     fill(bgcolour); // erase for label
     rect(0, labelpos, labelsize + 8 * pixelsize, textheight1 + 2 * pixelsize); // plus a few pixels margin for legibility
     fill(c);
-    text(labeltext, 0, labelpos + 7 * pixelsize); // +7px correction for textAlign(..,CENTER) not working!
+    text(labeltext, 0, labelpos + bug7px); // 7px correction for textAlign([...],CENTER) bug on MacOS/Firefox
 }
 
 // If axes not shown then also disable ticks
@@ -191,7 +197,7 @@ function setup() {
     neutral = color(255, 255, 255); // white for temperature anomaly = 0
     warm    = color(255,   0,   0); // red   for temperature anomaly > 0
     rectMode(CENTER);
-    textAlign(CENTER, CENTER); // vertical align CENTER doesn't seem to be working; it's same as BASELINE
+    textAlign(CENTER, CENTER); // see also global const 'textalignbug'
     timeindex = createSlider(0, maxindex);
     timeindex.style('width', `${canvassize}px`);
     timeindex.mousePressed(slidermove); // stop animation if adjusted
@@ -222,9 +228,9 @@ function draw() {
 
     // Grid and axes
     if (chkGrid.checked())
-        showgrid(0.5);
+        showgrid();
     if (chkAxes.checked())
-        showaxes(chkTicks.checked() ? 0.125 : 0);
+        showaxes(chkTicks.checked());
 
     // Reference circles
     for (let i = 0; i < refs.length; ++i)
@@ -243,16 +249,17 @@ function draw() {
     textSize(textheight2);
     // noStroke(); // same as month labels, no need to set again here
     // fill(labelcolour);
-    text(data.getString(Math.floor(index / labels.length), 0), 0, 16 * pixelsize);
+    const curyear = Math.floor(index / label_n);   // year = index div 12
+    text(data.getString(curyear, 0), 0, bug16px); // 16px correction for textAlign([...],CENTER) bug on MacOS/Firefox
 
     // Lines from point to point
     strokeWeight(2 * pixelsize);
     noFill();
-    let t0 = data.getNum(0, labels[0]); // first temperature anomaly in the set (Jan 1880)
+    let t0 = data.getNum(0, labels[0]); // first temperature anomaly in the set (row 0, col 'Jan' = Jan 1880)
     const r0 = mapping(t0); // circle radius
     let x0 = r0 * dir[0].x;
     let y0 = r0 * dir[0].y;
-    let yr = 0, mn = 1; // year/month in the loop (month starts at 1)
+    let yr = 0, mn = 1; // keep track of year/month in the loop (month starts at 1) to avoid div/mod
     for (let i = 1; i <= index; ++i) {         // fast & simple loop up to & including index = maxindex
         const t = data.getNum(yr, labels[mn]); // these are all valid as checked in setup()
         const r = mapping(t);
