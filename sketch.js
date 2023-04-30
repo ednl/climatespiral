@@ -12,6 +12,7 @@ const axescolour  = 153; // light grey
 const labelcolour = 255; // white
 const margin   = 0.12;   // leave 12% margin around the plot for month labels
 const gridstep = 0.50;   // gridline every 0.5 degrees celsius
+const tickmult = 4;      // number of ticks per grid division (4 means: 3 ticks between gridlines)
 const ticksize = 0.03;   // size of ticks on axes in scaled coordinates
 let cool, neutral, warm; // temperature anomaly colours defined in setup()
 
@@ -25,18 +26,17 @@ const label_n   = 12;                               // number of labels = 12 mon
 const label_a   = -2 * Math.PI / label_n;           // label angle = month labels 30 degrees apart (negative = clockwise in scaled coordinates)
 const label_r   = origin / (1 + margin / 2);        // label radius = month labels in middle of margin, start at centre-top (label_v inverts y)
 const rangelog  = (Math.exp(range) - 1) / range;    // range scaling for logarithmic graph
-const gridcount = Math.round(range / gridstep);     // how many gridlines from anomin to anomax
-const tickstep  = gridstep / 4;                     // 3 ticks between gridlines
-const tickcount = Math.round(range / tickstep) + 3; // how many ticks from anomin to anomax, +3 outside last gridline
 
 // Variables
-let data, labels, year0;  // labels = month names from CSV header row, year0 = year on row 0
-let index = 0, datalen;   // animation progression, number of data points on file
-let label_v;              // direction vectors corresponding to labels (=month names), y inverted from screen-like to maths
-let points;               // pre-calculated points and colours
-let mapping = 0;          // axes scaling as index: 0 = linear, 1 = sqrt, 2 = log
+let mapping = 0;    // axes scaling as index: 0 = linear, 1 = sqrt, 2 = log
+let running = true; // draw loop always runs to enable interaction, this controls the animation
+let index = 0;      // animation progression
+let data, datalen;  // data from CSV file, number of data points on file
+let labels, year0;  // labels = month names from CSV header row, year0 = year on row 0
+let label_v;        // direction vectors corresponding to labels (=month names), y inverted from screen-like to maths
+let points;         // pre-calculated points and colours
+let circles;        // pre-calculated refcircle parameters
 let chkGrid, chkAxes, chkTicks, scaling, timeindex; // checkboxes, radiobuttons, slider
-let running = true;       // draw loop always runs to enable interaction, this controls the animation
 
 // Linear translation from degrees celsius to circle radius in pixels
 function radius_lin(celsius) {
@@ -62,39 +62,33 @@ function showgrid() {
     strokeWeight(0.5);
     noFill();
     // Gridlines on the axes
-    line(0, origin, canvassize, origin);
-    line(origin, 0, origin, canvassize);
+    line(0, -origin, 0, origin);
+    line(-origin, 0, origin, 0);
     // Other gridlines
-    for (let i = 1; i <= gridcount; ++i) {
-        const c = anomin + i * gridstep; // temperature anomaly in celsius
-        const r = mapping(c);            // circle radius
-        const p = cx(r);
-        line(r, -borderdist, r, borderdist);
-        line(-r, -borderdist, -r, borderdist);
-        line(-borderdist, r, borderdist, r);
-        line(-borderdist, -r, borderdist, -r);
+    for (const r of grid_r) {
+        line(r, -origin, r, origin);
+        line(-r, -origin, -r, origin);
+        line(-origin, r, origin, r);
+        line(-origin, -r, origin, -r);
     }
 }
 
 // Show axes and ticks
 function showaxes(showticks) {
     stroke(axescolour);
-    strokeWeight(1 * pixelsize);
+    strokeWeight(1);
     noFill();
     // Axes
-    line(0, -borderdist, 0, borderdist);
-    line(-borderdist, 0, borderdist, 0);
+    line(0, -origin, 0, origin);
+    line(-origin, 0, origin, 0);
     // Ticks
-    if (showticks) {
-        for (let i = 1; i <= tickcount; ++i) {
-            const c = anomin + i * tickstep; // temperature anomaly in celsius
-            const r = mapping(c);            // circle radius
+    if (showticks)
+        for (const r of tick_r) {
             line(r, -ticksize, r, ticksize);
             line(-r, -ticksize, -r, ticksize);
             line(-ticksize, r, ticksize, r);
             line(-ticksize, -r, ticksize, -r);
         }
-    }
 }
 
 // Colour gradient depends on temperature anomaly in degrees celsius
@@ -102,27 +96,6 @@ function gradient(celsius) {
     if (celsius >= 0)
         return lerpColor(neutral, warm, celsius / anomax); // anomylymax > 0
     return lerpColor(neutral, cool, celsius / anomin);     // anomalymin < 0
-}
-
-// Reference circle for the climate spiral
-function refcircle(celsius) {
-    const c = gradient(celsius); // colour
-    const r = mapping(celsius);  // circle radius
-    textSize(textheight1);       // set before call to textWidth()
-    const labeltext = nf(celsius, 1, 1) + '°C';
-    const labelsize = textWidth(labeltext);
-    const labelpos = -r;         // y direction still screen-like, otherwise text would be upside down
-    // Circle
-    stroke(c);
-    strokeWeight(4 * pixelsize);
-    noFill();
-    circle(0, 0, r * 2);
-    // Label on background
-    noStroke();
-    fill(bgcolour); // erase for label
-    rect(0, labelpos, labelsize + 8 * pixelsize, textheight1 + 2 * pixelsize); // plus a few pixels margin for legibility
-    fill(c);
-    text(labeltext, 0, labelpos + bug7px); // 7px correction for textAlign([...],CENTER) bug on MacOS/Firefox
 }
 
 // If axes not shown then also disable ticks
@@ -137,22 +110,17 @@ function tickschanged() {
         chkAxes.checked(true);
 }
 
-// Axis scaling = lin/sqrt/log
+// Axis scaling: 0=lin, 1=sqrt, 2=log
 function scalingchanged() {
-    switch (this.value()) {
-        case '1': mapping = radius_lin; break;
-        case '2': mapping = radius_sqrt; break;
-        case '3': mapping = radius_log; break;
-    }
+    mapping = parseInt(this.value()) - 1;
 }
 
 // Stop animation when slider manually adjusted
 function slidermove() {
-    if (running)
-        running = false;
+    running = false;
 }
 
-// Start/stop animation when canvas clicked, or else propagate click
+// Toggle animation when canvas clicked, or else propagate click
 function mouseClicked() {
     if (mouseX >= 0 && mouseY >= 0 && mouseX < canvassize && mouseY < canvassize) {
         running = !running;
@@ -172,43 +140,67 @@ function setup() {
     labels = data.columns.slice(1, label_n + 1); // month names are in header row, columns 1..12
     year0 = data.getNum(0, 0); // row 0 col 0 = first year, should be 1880
 
+    // Determine total number of data points in the CSV file
+    // Last row may be incomplete, check from last column backwards
     const datarows = data.getRowCount();
     datalen = label_n * datarows; // length = 12 columns * number of rows
     for (let i = label_n; i > 0; --i) { // column index 12..1
-        // check data on last row, from last column backwards
-        if (data.getString(datarows - 1, i) === invalid) // data not available yet?
-            --datalen; // then 1 fewer data point
-        else
-            break;     // stop checking on first valid data
+        if (data.getString(datarows - 1, i) !== invalid)
+            break; // stop checking on first valid data
+        --datalen; // or else 1 fewer data point
     }
 
-    label_v = new Array(label_n); // 12 unit-length direction vectors
+    // Pre-calculate 12 unit-length direction vectors
+    // start at centre-top and go clockwise (for 12 labels and screen-like y-direction)
+    label_v = new Array(label_n);
     for (let i = 0; i < label_n; ++i) {
-        // start at centre-top (for 12 labels and screen-like y-direction)
-        // increase angle (=clockwise in scaled coordinates) by same amount as between month labels
         const a = (i - 3) * label_a;
         label_v[i] = {x: Math.cos(a), y: Math.sin(a)};
     }
 
-    points = new Array(datalen);
-    let yr = year0, mn = 0, t0 = 0;
-    for (let i = 0; i < datalen; ++i) {
-        const t = data.getNum(yr - year0, mn + 1); // row index 0.., column index 1..12
-        const gr = gradient((t + t0) / 2);
-        const r = [radius_lin(t), radius_sqrt(t), radius_log(t)]; // radius in pixels
-        // direct pixel coordinates for translated origin
-        const px = [
-            {x: r[0] * label_v[mn].x, y: r[0] * label_v[mn].y},
-            {x: r[1] * label_v[mn].x, y: r[1] * label_v[mn].y},
-            {x: r[2] * label_v[mn].x, y: r[2] * label_v[mn].y}
-        ];
-        points[i] = {yr: yr, mn: mn, gr: gr, px: px};
-        if (++mn == label_n) {
-            mn = 0;
-            ++yr;
-        }
-        t0 = t;
+    // Precalculate refcircle parameters
+    circles = [];
+    textSize(textheight1); // must be set before call to textWidth()
+    for (const c of refs) { // c = refcircle value in degrees celsius
+        const txt = nf(c, 1, 1) + '°C';
+        circles.push({
+            txt: txt,
+            w: textWidth(txt) + 8,
+            h: textheight1 + 2,
+            gr: gradient(c),
+            px: [radius_lin(c), radius_sqrt(c), radius_log(c)]
+        });
     }
+
+    // Precalculate grid and tick coordinates
+    grid_r = []; // gridlines on the axes are implied
+    for (let i = 1; i <= Math.round(range / gridstep); ++i) {
+        const c = anomin + i * gridstep;
+        grid_r.push([radius_lin(c), radius_sqrt(c), radius_log(c)]);
+    }
+    // const tickstep  = gridstep / 4;                     // 3 ticks between gridlines
+    // const tickcount = Math.round(range / tickstep) + 3; // how many ticks from anomin to anomax, +3 outside last gridline
+
+    // Pre-calculate all line colours and screen x/y coordinates
+    // (direct pixel coordinates for translated origin)
+    points = new Array(datalen);
+    let ix = 0, t0 = 0;
+    for (let row = 0; row < datarows; ++row) // all rows
+        for (let mn = 0; mn < label_n; ++mn) // all months
+            if (ix < datalen) {
+                const t = data.getNum(row, mn + 1); // months in col 1-12
+                const r = [radius_lin(t), radius_sqrt(t), radius_log(t)]; // radius in pixels
+                points[ix++] = {
+                    yr: row + year0,
+                    gr: gradient((t0 + t) / 2),
+                    px: [
+                        {x: r[0] * label_v[mn].x, y: r[0] * label_v[mn].y},
+                        {x: r[1] * label_v[mn].x, y: r[1] * label_v[mn].y},
+                        {x: r[2] * label_v[mn].x, y: r[2] * label_v[mn].y}
+                    ]
+                };
+                t0 = t;
+            }
 
     createCanvas(canvassize, canvassize);
     colorMode(RGB);
@@ -217,19 +209,21 @@ function setup() {
     warm    = color(255,   0,   0); // red   for temperature anomaly > 0
     rectMode(CENTER);
     textAlign(CENTER, CENTER);
+
     timeindex = createSlider(0, datalen - 1);
     timeindex.style('width', `${canvassize}px`);
-    timeindex.mousePressed(slidermove); // stop animation if adjusted manually
     chkGrid = createCheckbox('grid', true);
     chkAxes = createCheckbox('axes', false);
-    chkAxes.changed(axeschanged);
     chkTicks = createCheckbox('ticks', false);
-    chkTicks.changed(tickschanged);
     scaling = createRadio();
     scaling.option('1', 'linear');
     scaling.option('2', 'sqrt');
     scaling.option('3', 'log');
     scaling.selected('1');
+
+    timeindex.mousePressed(slidermove); // stop animation if adjusted manually
+    chkAxes.changed(axeschanged);
+    chkTicks.changed(tickschanged);
     scaling.changed(scalingchanged); // avoid expensive check in draw() loop
 }
 
@@ -251,10 +245,21 @@ function draw() {
         showaxes(chkTicks.checked());
 
     // Reference circles
-    for (const r of refs)
-        refcircle(r);
+    textSize(textheight1);
+    strokeWeight(4);
+    for (const c of circles) {
+        const r = c.px[mapping];
+        stroke(c.gr);
+        noFill();
+        circle(0, 0, r * 2);
+        noStroke();
+        fill(bgcolour); // erase space for label
+        rect(0, -r, c.w, c.h);
+        fill(c.gr);
+        text(c.txt, 0, -r);
+    }
 
-    // Month labels, directly behind refcircles to reuse settings
+    // Month labels, directly after refcircle() to reuse settings
     fill(labelcolour);
     // textSize(textheight1); // same as labels on refcircles, no need to set again here
     // noStroke();
@@ -267,13 +272,13 @@ function draw() {
     textSize(textheight2);
     // noStroke(); // same as month labels, no need to set again here
     // fill(labelcolour);
-    text(points[index].yr, 0, bug16px); // 16px correction for textAlign([...],CENTER) bug on MacOS/Firefox
+    text(points[index].yr, 0, 0);
 
     // Lines from point to point
-    strokeWeight(2 * pixelsize);
+    strokeWeight(2);
     noFill();
     let p = points[0].px[mapping];
-    for (let i = 1; i <= index; ++i) {         // fast & simple loop up to & including index < datalen
+    for (let i = 1; i <= index; ++i) { // fast & simple loop up to & including index < datalen
         stroke(points[i].gr);
         const q = points[i].px[mapping];
         line(p.x, p.y, q.x, q.y);
